@@ -1,0 +1,7 @@
+Flask>=3.0
+PyYAML>=6.0
+psutil>=5.9
+waitress>=3.0
+# Optional: without this the anomaly score falls back to a heuristic
+scikit-learn>=1.1
+pytest>=7.4

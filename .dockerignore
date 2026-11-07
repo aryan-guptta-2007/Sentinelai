@@ -1,0 +1,9 @@
+venv
+.venv
+.git
+data
+logs
+reporter-output
+**/__pycache__
+.pytest_cache
+.ruff_cache

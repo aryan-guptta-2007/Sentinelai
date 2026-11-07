@@ -1,0 +1,23 @@
+[Unit]
+Description=SentinelAI host intrusion detection and response
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/sentinelai
+ExecStart=/opt/sentinelai/daemon/sentinel_daemon.sh
+Restart=on-failure
+RestartSec=5
+User=root
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=true
+# "full" would also make /etc read-only, and locking an account means writing /etc/shadow.
+ProtectSystem=true
+ProtectHome=read-only
+PrivateTmp=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

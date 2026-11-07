@@ -1,0 +1,3 @@
+# Accounts SentinelAI must never lock and whose processes it must never kill.
+# root is always protected, whatever this file says.
+root

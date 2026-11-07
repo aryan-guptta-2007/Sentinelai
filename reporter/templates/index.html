@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>SentinelAI Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <h1>SentinelAI</h1>
+        <p class="muted" id="updated">Connecting…</p>
+      </div>
+      <div class="controls">
+        <span class="badge" id="mode">…</span>
+        <div class="segmented" role="group" aria-label="Time range">
+          <button type="button" data-window="1h">1h</button>
+          <button type="button" data-window="6h">6h</button>
+          <button type="button" data-window="24h">24h</button>
+          <button type="button" data-window="7d">7d</button>
+        </div>
+      </div>
+    </header>
+
+    <p class="banner" id="error" hidden></p>
+    <p class="banner" id="capped" hidden>More threats than can be shown at once: severity counts, responses and the tables cover the newest 20,000. Event and alert totals are exact.</p>
+
+    <section class="tiles" aria-label="Totals">
+      <div class="tile"><span class="muted">Events</span><b id="t-events">–</b></div>
+      <div class="tile"><span class="muted">Alerts</span><b id="t-alerts">–</b></div>
+      <div class="tile"><span class="muted">Responses</span><b id="t-responses">–</b></div>
+      <div class="tile"><span class="muted"><span class="dot critical"></span>Critical</span><b id="t-critical">–</b></div>
+      <div class="tile"><span class="muted"><span class="dot serious"></span>High</span><b id="t-high">–</b></div>
+      <div class="tile"><span class="muted">Blocked IPs</span><b id="t-blocked">–</b></div>
+    </section>
+
+    <section class="card">
+      <h2>Incidents</h2>
+      <p class="muted">Alerts that belong to the same attack, newest first. Open one to see what happened and what to do.</p>
+      <div id="incidents"></div>
+    </section>
+
+    <section class="card">
+      <h2>Activity over time</h2>
+      <div class="legend" id="legend"></div>
+      <div class="chart" id="chart"></div>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Top source IPs</h2>
+        <div id="top-ips"></div>
+      </section>
+      <section class="card">
+        <h2>MITRE ATT&amp;CK techniques</h2>
+        <div id="mitre"></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Latest threats</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Time</th><th>Score</th><th>Severity</th><th>Action</th><th>Target</th><th>Reason</th><th>MITRE</th></tr></thead>
+          <tbody id="threats"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Response actions</h2>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>Time</th><th>Action</th><th>Target</th><th>Status</th><th>Detail</th></tr></thead>
+            <tbody id="actions"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Blocked IPs</h2>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>IP</th><th>Expires in</th><th>State</th></tr></thead>
+            <tbody id="blocked"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Components</h2>
+      <div class="components" id="components"></div>
+    </section>
+
+    <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+  </body>
+</html>

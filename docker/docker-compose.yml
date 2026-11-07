@@ -1,0 +1,14 @@
+services:
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/dashboard.Dockerfile
+    # Data files are private to the account that runs SentinelAI, so this must be that
+    # account. The mount is read-only. Set SENTINELAI_UID if it is not root.
+    user: "${SENTINELAI_UID:-0}"
+    read_only: true
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ../data:/app/data:ro
+      - ../logs:/app/logs

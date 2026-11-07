@@ -1,0 +1,4 @@
+# Addresses and CIDR ranges SentinelAI must never block, one per line.
+# Add your admin workstation or VPN range here before switching to enforce mode.
+127.0.0.1
+::1

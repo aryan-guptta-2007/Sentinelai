@@ -1,0 +1,674 @@
+# SentinelAI detection and response rules. This file is the single source of truth.
+#
+# Each rule needs: id, match (event type), alert_type, severity (1-10), reason.
+# Optional:
+#   mitre          ATT&CK technique ids
+#   cooldown_sec   minimum time between alerts for the same group
+#   stop           matching this rule ends evaluation of the event
+#   enabled        false keeps the rule in the file but switches it off
+#   evidence       why this rule justifies what it does, shown beside the alert
+#   advice         what a person should do next
+#   respond        what to do about it (see below)
+#
+# Criteria:
+#   count + window_sec     fire after N matching events in a sliding window
+#   distinct               count distinct values of this field instead of events
+#   group_by               field that identifies the source (ip, user, port, pid...)
+#   not_in_allowed_ports   skip ports listed under [network] allowed_ports
+#   after_rule/within_sec  fire only if that rule fired for the same group recently
+#   offensive_tool         fire only if the process is on a suspicious or malicious list
+#   privileged_port_boost  add to severity for ports below 1024
+#   where                  field conditions, with dots for nesting. A value means equals.
+#                          Also {in: [..]}, {not: x}, {contains: x} and {regex: x}.
+#
+# Responses:
+#   respond:
+#     - {action: block_ip, target: ip, min_score: 40}
+#     - {action: lock_user, target: user}
+#     - {action: kill_process, target: pid}
+#
+# target is the event field holding the address, user or PID, and defaults to ip, user
+# and pid. min_score gates a step on the final score, which host anomalies can raise.
+# That is only allowed for block_ip, which is timed and reversible. kill_process and
+# lock_user take effect because of what a rule proved, never because the host was busy,
+# so a rule that has them must be specific enough to deserve them.
+#
+# {placeholders} in reason are filled from the event, plus {count}, {window} and {proc}.
+# Rules are checked at startup: a mistake stops the engine with an error instead of
+# quietly disabling a detection. A running engine keeps its old rules if an edit is bad.
+rules:
+  # ---------------------------------------------------------------- authentication
+  - id: auth_failed_burst
+    match: auth_fail
+    alert_type: auth_burst
+    criteria:
+      count: 5
+      window_sec: 60
+      group_by: ip
+    severity: 7
+    cooldown_sec: 60
+    mitre: [T1110.001]
+    evidence: [repeated_failed_logins]
+    reason: "Failed login burst from {ip} ({count} in {window}s)"
+    advice: "Check whether this address is yours. If it is, add it to config/allowlist_ips.txt."
+    respond:
+      - {action: block_ip, min_score: 40}
+
+  - id: auth_password_spray
+    match: auth_fail
+    alert_type: auth_spray
+    criteria:
+      distinct: user
+      count: 5
+      window_sec: 600
+      group_by: ip
+    severity: 7
+    cooldown_sec: 600
+    mitre: [T1110.003]
+    evidence: [many_usernames_from_one_source]
+    reason: "Password spray from {ip} ({count} usernames in {window}s)"
+    advice: "Look for a successful login from this address in the same period."
+    respond:
+      - {action: block_ip, min_score: 40}
+
+  - id: auth_distributed_bruteforce
+    match: auth_fail
+    alert_type: auth_distributed
+    criteria:
+      distinct: ip
+      count: 10
+      window_sec: 600
+      group_by: user
+    severity: 7
+    cooldown_sec: 600
+    mitre: [T1110.001]
+    evidence: [many_sources_against_one_account]
+    reason: "Distributed brute force against {user} ({count} addresses in {window}s)"
+    advice: "No single address can be blocked. Make sure this account uses strong credentials or keys only."
+
+  - id: auth_probe_burst
+    match: auth_probe
+    alert_type: auth_probe
+    criteria:
+      count: 10
+      window_sec: 60
+      group_by: ip
+    severity: 6
+    cooldown_sec: 60
+    mitre: [T1110.001]
+    evidence: [repeated_preauth_failures]
+    reason: "Login probing from {ip} ({count} attempts in {window}s)"
+    advice: "Key-only servers show brute force this way, since no password is ever tried."
+    respond:
+      - {action: block_ip, min_score: 40}
+
+  - id: auth_username_enumeration
+    match: auth_probe
+    alert_type: auth_enumeration
+    criteria:
+      distinct: user
+      count: 5
+      window_sec: 600
+      group_by: ip
+    severity: 7
+    cooldown_sec: 600
+    mitre: [T1110.003, T1589.003]
+    evidence: [many_usernames_from_one_source]
+    reason: "Username enumeration from {ip} ({count} usernames in {window}s)"
+    respond:
+      - {action: block_ip, min_score: 40}
+
+  - id: auth_bruteforce_success
+    match: auth_success
+    alert_type: auth_compromise
+    criteria:
+      after_rule: auth_failed_burst
+      within_sec: 900
+      group_by: ip
+    severity: 10
+    cooldown_sec: 300
+    mitre: [T1110, T1078]
+    evidence: [login_after_brute_force]
+    reason: "Login for {user} from {ip} right after a brute-force burst"
+    advice: "Treat this account as compromised: change its credentials and review what it did."
+    respond:
+      - {action: block_ip}
+      - {action: lock_user}
+
+  - id: auth_spray_success
+    match: auth_success
+    alert_type: auth_compromise
+    criteria:
+      after_rule: auth_password_spray
+      within_sec: 1800
+      group_by: ip
+    severity: 10
+    cooldown_sec: 300
+    mitre: [T1110.003, T1078]
+    evidence: [login_after_password_spray]
+    reason: "Login for {user} from {ip} right after a password spray"
+    advice: "Treat this account as compromised: change its credentials and review what it did."
+    respond:
+      - {action: block_ip}
+      - {action: lock_user}
+
+  # ---------------------------------------------------------------- privilege
+  - id: sudo_failure_burst
+    match: sudo_fail
+    alert_type: sudo_abuse
+    criteria:
+      count: 3
+      window_sec: 300
+      group_by: user
+    severity: 6
+    cooldown_sec: 300
+    mitre: [T1548.003]
+    evidence: [repeated_sudo_failures]
+    reason: "Repeated sudo failures by {user} ({count} in {window}s)"
+
+  - id: sudo_not_allowed
+    match: sudo_denied
+    alert_type: sudo_abuse
+    criteria:
+      group_by: user
+    severity: 6
+    cooldown_sec: 300
+    mitre: [T1548.003]
+    evidence: [sudo_refused]
+    reason: "{user} tried sudo without permission"
+
+  - id: su_failure_burst
+    match: su_fail
+    alert_type: su_abuse
+    criteria:
+      count: 3
+      window_sec: 300
+      group_by: user
+    severity: 6
+    cooldown_sec: 300
+    mitre: [T1110.001]
+    evidence: [repeated_su_failures]
+    reason: "Repeated su failures for {user} ({count} in {window}s)"
+
+  # ---------------------------------------------------------------- accounts
+  - id: root_equivalent_account
+    match: user_add
+    alert_type: new_user_alert
+    criteria:
+      where:
+        meta.uid: 0
+      group_by: user
+    severity: 10
+    cooldown_sec: 300
+    stop: true
+    mitre: [T1136.001]
+    evidence: [new_account_with_uid_0]
+    reason: "New account {user} created with UID 0"
+    advice: "Only root should have UID 0. Find out who created this account."
+    respond:
+      - {action: lock_user}
+
+  - id: account_made_root_equivalent
+    match: user_mod
+    alert_type: account_escalation
+    criteria:
+      where:
+        meta.new_uid: 0
+      group_by: user
+    severity: 10
+    cooldown_sec: 300
+    mitre: [T1098]
+    evidence: [existing_account_given_uid_0]
+    reason: "Account {user} changed to UID 0"
+    advice: "Only root should have UID 0. Find out who changed this account."
+    respond:
+      - {action: lock_user}
+
+  - id: new_user_account
+    match: user_add
+    alert_type: new_user_alert
+    criteria:
+      group_by: user
+    severity: 6
+    cooldown_sec: 300
+    mitre: [T1136.001]
+    evidence: [new_account]
+    reason: "New user account {user}"
+    advice: "Confirm someone on your team created this account."
+
+  - id: added_to_privileged_group
+    match: group_add
+    alert_type: privileged_group_change
+    criteria:
+      where:
+        meta.group:
+          in: [root, sudo, wheel, admin, adm, docker, lxd, shadow, disk, Administrators, "Remote Desktop Users"]
+      group_by: user
+    severity: 8
+    cooldown_sec: 300
+    mitre: [T1098]
+    evidence: [added_to_privileged_group]
+    reason: "{user} added to privileged group {group}"
+    advice: "Confirm this was an approved change. This group gives root-level access."
+
+  # ---------------------------------------------------------------- network
+  - id: backdoor_listener
+    match: new_port
+    alert_type: new_port_alert
+    criteria:
+      not_in_allowed_ports: true
+      offensive_tool: true
+      group_by: port
+    severity: 10
+    cooldown_sec: 300
+    stop: true
+    mitre: [T1571, T1059]
+    evidence: [offensive_tool_listening]
+    reason: "Backdoor listener on port {port}"
+    advice: "An offensive tool opened a port. Find out how it got here, not only that it stopped."
+    respond:
+      - {action: kill_process}
+
+  - id: new_listening_port
+    match: new_port
+    alert_type: new_port_alert
+    criteria:
+      not_in_allowed_ports: true
+      group_by: port
+      privileged_port_boost: 2
+      where:
+        meta.exposed:
+          not: false
+    severity: 5
+    cooldown_sec: 300
+    mitre: [T1571]
+    evidence: [unexpected_listener]
+    reason: "New listening port {port}"
+    advice: "If this service is expected, add the port to allowed_ports in config/sentinelai.toml."
+
+  # ---------------------------------------------------------------- processes
+  - id: malicious_process
+    match: suspicious_proc
+    alert_type: suspicious_proc_alert
+    criteria:
+      where:
+        meta.flags:
+          contains: malicious
+      group_by: pid
+    severity: 9
+    cooldown_sec: 900
+    stop: true
+    mitre: [T1496, T1059]
+    evidence: [known_malicious_tool]
+    reason: "Malicious tool {proc} running (pid {pid})"
+    advice: "Malicious tools do not arrive by themselves. Look for how it got onto this host."
+    respond:
+      - {action: kill_process}
+
+  - id: dual_use_tool
+    match: suspicious_proc
+    alert_type: suspicious_proc_alert
+    criteria:
+      where:
+        meta.flags:
+          contains: name
+      group_by: pid
+    severity: 6
+    cooldown_sec: 900
+    stop: true
+    mitre: [T1059]
+    evidence: [dual_use_tool]
+    reason: "Dual-use tool {proc} running (pid {pid})"
+    advice: "Admins use these too, so this is for review. Nothing is stopped automatically."
+
+  - id: resource_hog
+    match: suspicious_proc
+    alert_type: resource_alert
+    criteria:
+      group_by: pid
+    severity: 5
+    cooldown_sec: 3600
+    mitre: [T1496]
+    evidence: [sustained_resource_use]
+    reason: "High resource use by {proc} (pid {pid})"
+    advice: "Builds and databases do this too, so this is for review. Nothing is stopped automatically."
+
+  - id: reverse_shell
+    match: reverse_shell
+    alert_type: reverse_shell
+    criteria:
+      group_by: pid
+    severity: 10
+    cooldown_sec: 900
+    mitre: [T1059.004]
+    evidence: [shell_wired_to_a_socket]
+    reason: "Reverse shell: {proc} (pid {pid}) is driven over a network socket"
+    advice: "Someone has interactive access. Look at this process's parent to find the way in."
+    respond:
+      - {action: kill_process}
+
+  - id: web_shell
+    match: webshell_spawn
+    alert_type: web_shell
+    criteria:
+      group_by: pid
+    severity: 9
+    cooldown_sec: 900
+    mitre: [T1505.003]
+    evidence: [server_started_a_shell]
+    reason: "{parent} started {proc} (pid {pid}), which is how web shells behave"
+    advice: "Check the web root for recently changed files and the access log for the request."
+    respond:
+      - {action: kill_process}
+
+  - id: fileless_process
+    match: fileless_process
+    alert_type: fileless_execution
+    criteria:
+      group_by: pid
+    severity: 9
+    cooldown_sec: 900
+    mitre: [T1620]
+    evidence: [running_from_memory]
+    reason: "{proc} (pid {pid}) is running from memory with no file on disk"
+    respond:
+      - {action: kill_process}
+
+  - id: deleted_binary
+    match: deleted_binary
+    alert_type: deleted_binary
+    criteria:
+      group_by: pid
+    severity: 7
+    cooldown_sec: 900
+    mitre: [T1070.004]
+    evidence: [binary_removed_while_running]
+    reason: "{proc} (pid {pid}) is still running after its file was deleted"
+    advice: "Malware often deletes itself after starting. Copy /proc/PID/exe before stopping it."
+
+  - id: temp_binary
+    match: temp_binary
+    alert_type: temp_binary
+    criteria:
+      group_by: pid
+    severity: 6
+    cooldown_sec: 900
+    mitre: [T1059]
+    evidence: [running_from_temporary_folder]
+    reason: "{proc} (pid {pid}) is running from a temporary folder"
+
+  - id: malicious_command
+    match: malicious_command
+    alert_type: malicious_command
+    criteria:
+      where:
+        meta.confidence: high
+      group_by: pid
+    severity: 9
+    cooldown_sec: 900
+    stop: true
+    evidence: [known_attack_command]
+    reason: "{summary} (pid {pid})"
+    advice: "The command line is in this alert. Find out what started it."
+    respond:
+      - {action: kill_process}
+
+  - id: suspicious_command
+    match: malicious_command
+    alert_type: suspicious_command
+    criteria:
+      group_by: pid
+    severity: 6
+    cooldown_sec: 900
+    evidence: [suspicious_command]
+    reason: "{summary} (pid {pid})"
+    advice: "Admins do this too, so this is for review. Nothing is stopped automatically."
+
+  # ---------------------------------------------------------------- defence evasion
+  - id: log_cleared
+    match: log_cleared
+    alert_type: log_tampering
+    criteria:
+      group_by: type
+    severity: 9
+    cooldown_sec: 300
+    mitre: [T1070.001, T1070.002]
+    evidence: [log_cleared]
+    reason: "{msg}"
+    advice: "Attackers clear logs to hide what they did. Compare with anything kept off this host."
+
+  - id: defender_disabled
+    match: defender_disabled
+    alert_type: defense_evasion
+    criteria:
+      group_by: type
+    severity: 9
+    cooldown_sec: 300
+    mitre: [T1562.001]
+    evidence: [antivirus_disabled]
+    reason: "{msg}"
+    advice: "Turn real-time protection back on and find out what changed it."
+
+  - id: malware_detected
+    match: malware_detected
+    alert_type: malware
+    criteria:
+      group_by: meta.threat
+    severity: 9
+    cooldown_sec: 300
+    mitre: [T1204]
+    evidence: [antivirus_detection]
+    reason: "{msg}"
+    advice: "Check what Defender did with it, and how the file got here."
+
+  # ---------------------------------------------------------------- persistence
+  - id: service_installed
+    match: service_installed
+    alert_type: persistence
+    criteria:
+      group_by: meta.service
+    severity: 6
+    cooldown_sec: 300
+    mitre: [T1543.003]
+    evidence: [new_service]
+    reason: "{msg}"
+    advice: "Software updates do this too. Check the path is something you installed."
+
+  - id: scheduled_task_created
+    match: task_created
+    alert_type: persistence
+    criteria:
+      group_by: meta.task
+    severity: 5
+    cooldown_sec: 300
+    mitre: [T1053.005]
+    evidence: [new_scheduled_task]
+    reason: "{msg}"
+
+  - id: crontab_changed
+    match: cron_change
+    alert_type: persistence
+    criteria:
+      group_by: user
+    severity: 5
+    cooldown_sec: 300
+    mitre: [T1053.003]
+    evidence: [crontab_changed]
+    reason: "Crontab changed for {user}"
+
+  - id: root_password_changed
+    match: password_change
+    alert_type: account_escalation
+    criteria:
+      where:
+        user: root
+      group_by: user
+    severity: 7
+    cooldown_sec: 300
+    mitre: [T1098]
+    evidence: [root_password_changed]
+    reason: "The root password was changed"
+    advice: "Confirm this was planned."
+
+  - id: account_lockout
+    match: account_lockout
+    alert_type: auth_burst
+    criteria:
+      group_by: user
+    severity: 6
+    cooldown_sec: 300
+    mitre: [T1110]
+    evidence: [account_locked_out]
+    reason: "{msg}"
+
+  # ---------------------------------------------------------------- behaviour
+  - id: host_behaviour_anomaly
+    match: host_anomaly
+    alert_type: host_anomaly
+    criteria:
+      group_by: type
+    severity: 5
+    cooldown_sec: 3600
+    mitre: [T1496]
+    evidence: [behaviour_outside_this_hosts_normal_range]
+    reason: "{msg}"
+    advice: "The model flags what no rule describes. Look at what changed on the host at this time."
+
+  # ---------------------------------------------------------------- file integrity
+  # A changed file can be an admin at work, so these report and never act.
+  - id: linker_hijack
+    match: file_change
+    alert_type: rootkit
+    criteria:
+      where:
+        meta.category: preload
+      group_by: meta.path
+    severity: 10
+    cooldown_sec: 300
+    mitre: [T1574.006]
+    evidence: [dynamic_linker_preload_changed]
+    reason: "Dynamic linker preload {change}: {path}"
+    advice: "This loads code into every program on the host, a classic rootkit technique. Treat the host as compromised."
+
+  - id: ssh_key_changed
+    match: file_change
+    alert_type: persistence
+    criteria:
+      where:
+        meta.category: ssh_keys
+      group_by: meta.path
+    severity: 8
+    cooldown_sec: 300
+    mitre: [T1098.004]
+    evidence: [authorized_keys_changed]
+    reason: "SSH authorized keys {change}: {path}"
+    advice: "Read the file. A key you do not recognise is a way back in for someone."
+
+  - id: sudoers_changed
+    match: file_change
+    alert_type: persistence
+    criteria:
+      where:
+        meta.category: sudoers
+      group_by: meta.path
+    severity: 8
+    cooldown_sec: 300
+    mitre: [T1548.003]
+    evidence: [sudoers_changed]
+    reason: "Sudo configuration {change}: {path}"
+    advice: "Check who can now become root."
+
+  - id: pam_changed
+    match: file_change
+    alert_type: persistence
+    criteria:
+      where:
+        meta.category: pam
+      group_by: meta.path
+    severity: 8
+    cooldown_sec: 300
+    mitre: [T1556.003]
+    evidence: [pam_changed]
+    reason: "Login module configuration {change}: {path}"
+    advice: "Package upgrades do this too. If none ran, check for a backdoored login path."
+
+  - id: ssh_config_changed
+    match: file_change
+    alert_type: persistence
+    criteria:
+      where:
+        meta.category: ssh_config
+      group_by: meta.path
+    severity: 7
+    cooldown_sec: 300
+    mitre: [T1098]
+    evidence: [ssh_config_changed]
+    reason: "SSH server configuration {change}: {path}"
+
+  - id: cron_file_changed
+    match: file_change
+    alert_type: persistence
+    criteria:
+      where:
+        meta.category: cron
+      group_by: meta.path
+    severity: 7
+    cooldown_sec: 300
+    mitre: [T1053.003]
+    evidence: [cron_file_changed]
+    reason: "Scheduled job {change}: {path}"
+    advice: "Read what it runs."
+
+  - id: service_file_changed
+    match: file_change
+    alert_type: persistence
+    criteria:
+      where:
+        meta.category: service
+      group_by: meta.path
+    severity: 7
+    cooldown_sec: 300
+    mitre: [T1543.002]
+    evidence: [service_file_changed]
+    reason: "System service {change}: {path}"
+
+  - id: startup_item_changed
+    match: file_change
+    alert_type: persistence
+    criteria:
+      where:
+        meta.category: startup
+      group_by: meta.path
+    severity: 7
+    cooldown_sec: 300
+    mitre: [T1547.001]
+    evidence: [startup_item_changed]
+    reason: "Startup item {change}: {path}"
+    advice: "Software installs do this too. Check it is something you installed."
+
+  - id: hosts_file_changed
+    match: file_change
+    alert_type: tampering
+    criteria:
+      where:
+        meta.category: hosts
+      group_by: meta.path
+    severity: 6
+    cooldown_sec: 300
+    mitre: [T1565.001]
+    evidence: [hosts_file_changed]
+    reason: "Hosts file {change}: {path}"
+
+  - id: identity_file_changed
+    match: file_change
+    alert_type: tampering
+    criteria:
+      where:
+        meta.category: identity
+      group_by: meta.path
+    severity: 5
+    cooldown_sec: 300
+    mitre: [T1098]
+    evidence: [account_database_changed]
+    reason: "Account database {change}: {path}"
+    advice: "Adding a user or changing a password does this too."

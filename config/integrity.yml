@@ -1,0 +1,38 @@
+# Files an attacker changes to keep access or hide. A folder covers the files directly
+# inside it, and * matches as it does in a shell. On Windows, %NAME% expands from the
+# environment and registry: watches every value under a key.
+#
+# category decides which rule in rules.yml applies, and therefore how serious it is.
+linux:
+  - {path: /etc/passwd, category: identity}
+  - {path: /etc/shadow, category: identity}
+  - {path: /etc/group, category: identity}
+  - {path: /etc/sudoers, category: sudoers}
+  - {path: /etc/sudoers.d, category: sudoers}
+  - {path: /etc/ssh/sshd_config, category: ssh_config}
+  - {path: /etc/ssh/sshd_config.d, category: ssh_config}
+  - {path: /root/.ssh/authorized_keys, category: ssh_keys}
+  - {path: "/home/*/.ssh/authorized_keys", category: ssh_keys}
+  - {path: /etc/crontab, category: cron}
+  - {path: /etc/cron.d, category: cron}
+  - {path: /etc/cron.hourly, category: cron}
+  - {path: /etc/cron.daily, category: cron}
+  - {path: /var/spool/cron, category: cron}
+  - {path: /var/spool/cron/crontabs, category: cron}
+  - {path: /etc/systemd/system, category: service}
+  - {path: /etc/ld.so.preload, category: preload}
+  - {path: /etc/pam.d, category: pam}
+  - {path: /etc/rc.local, category: startup}
+  - {path: /etc/profile.d, category: startup}
+  - {path: /root/.bashrc, category: startup}
+  - {path: /root/.profile, category: startup}
+  - {path: /etc/hosts, category: hosts}
+
+windows:
+  - {path: '%SystemRoot%\System32\drivers\etc\hosts', category: hosts}
+  - {path: '%ProgramData%\Microsoft\Windows\Start Menu\Programs\StartUp', category: startup}
+  - {path: '%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup', category: startup}
+  - {registry: 'HKLM\Software\Microsoft\Windows\CurrentVersion\Run', category: startup}
+  - {registry: 'HKLM\Software\Microsoft\Windows\CurrentVersion\RunOnce', category: startup}
+  - {registry: 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run', category: startup}
+  - {registry: 'HKCU\Software\Microsoft\Windows\CurrentVersion\RunOnce', category: startup}

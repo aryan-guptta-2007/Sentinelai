@@ -1,0 +1,189 @@
+# What makes a process suspicious, beyond its name. Checked at startup.
+#
+# confidence: high stops the process in enforce mode, so it is reserved for commands with
+# almost no legitimate use. If a real admin or installer could run it, it belongs at
+# medium, which is reported for a person to review and stops nothing.
+#
+# A high indicator needs programs: the running program must be one of these, so text that
+# merely appears in another command's arguments, like "tar -xzf nc.tar.gz -C /opt", cannot
+# match. Version numbers are ignored, so python covers python3.11.
+# Patterns are case sensitive unless ignore_case is true, which suits Windows commands.
+
+# Interpreters that give an attacker a foothold when they turn up in the wrong place.
+shells: [sh, bash, dash, zsh, ksh, csh, tcsh, fish, cmd, powershell, pwsh]
+
+# Services that should never start a shell. When one does, it is usually a web shell.
+servers: [nginx, apache2, httpd, lighttpd, php-fpm, php, tomcat, java, w3wp, iisexpress]
+
+# Programs that only display or search text, so a pattern in their arguments means nothing.
+text_tools: [grep, egrep, fgrep, rg, ag, ack, less, more, cat, tail, head, vi, vim, nvim, nano, emacs, code, sed, awk, findstr, notepad]
+
+# Programs running from here are worth a look on Linux. Windows installers run from
+# temporary folders all the time, so this is not applied there.
+temp_dirs: [/tmp/, /var/tmp/, /dev/shm/]
+
+# A binary replaced on disk by a package upgrade looks deleted too. These are the
+# places that happens, so only deleted binaries from anywhere else are reported.
+system_dirs: [/usr/, /bin/, /sbin/, /lib/, /lib64/, /opt/, /snap/, /nix/]
+
+commands:
+  # ------------------------------------------------------------ Linux, high
+  - id: reverse_shell_dev_tcp
+    pattern: '(\bsh\s+-i\b|\bbash\s+-i\b|\bzsh\s+-i\b).*/dev/(tcp|udp)/|/dev/(tcp|udp)/\S+.*\s0>&1|/dev/(tcp|udp)/\S+;\s*(ba|da|z|k)?sh\s+<&\d'
+    programs: [sh, bash, dash, zsh, ksh]
+    technique: T1059.004
+    confidence: high
+    summary: Interactive shell wired to a network connection
+
+  - id: netcat_exec
+    pattern: '\s-[a-zA-Z]*[ec]\s+\S'
+    programs: [nc, ncat, netcat, nc.traditional, nc.openbsd]
+    technique: T1059.004
+    confidence: high
+    summary: Netcat running a program for a remote peer
+
+  - id: socat_shell
+    pattern: '\bexec:["'']?(/\S*/)?(ba|da|z|k)?sh\b'
+    programs: [socat]
+    ignore_case: true
+    technique: T1059.004
+    confidence: high
+    summary: Socat handing a shell to a remote peer
+
+  - id: scripted_reverse_shell
+    pattern: '(socket|fsockopen|TCPSocket).*(os\.dup2|pty\.spawn|/bin/(ba|da|z|k)?sh)'
+    programs: [python, perl, ruby, php]
+    technique: T1059.006
+    confidence: high
+    summary: Scripted reverse shell
+
+  # ---------------------------------------------------------- Linux, medium
+  - id: dev_tcp_connection
+    pattern: '/dev/(tcp|udp)/[^/\s]+/\d+'
+    technique: T1059.004
+    confidence: medium
+    summary: Shell opening a raw network connection
+
+  - id: download_and_run
+    pattern: '\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|da|z|k)?sh\b'
+    technique: T1105
+    confidence: medium
+    summary: Downloaded script piped straight into a shell
+
+  - id: decode_and_run
+    pattern: '\bbase64\b\s+(-d|--decode)\b.*\|\s*(ba|da|z|k)?sh\b'
+    technique: T1027
+    confidence: medium
+    summary: Encoded payload piped into a shell
+
+  - id: history_wiped
+    pattern: '(\bhistory\s+-c\b|\bunset\s+HISTFILE\b|HISTFILE=/dev/null|\brm\b.*\.bash_history\b)'
+    technique: T1070.003
+    confidence: medium
+    summary: Shell history being erased
+
+  - id: key_planted
+    pattern: '>>\s*\S*\.ssh/authorized_keys'
+    technique: T1098.004
+    confidence: medium
+    summary: SSH key appended from a command
+
+  # ---------------------------------------------------------- Windows, high
+  - id: certutil_download
+    pattern: '\s[-/]urlcache\b.*https?:'
+    programs: [certutil]
+    ignore_case: true
+    technique: T1105
+    confidence: high
+    summary: certutil used to download a file
+
+  - id: mshta_remote
+    pattern: '\b(https?:|javascript:|vbscript:)'
+    programs: [mshta]
+    ignore_case: true
+    technique: T1218.005
+    confidence: high
+    summary: mshta running remote or inline script
+
+  - id: regsvr32_remote
+    pattern: '\s/i:\s*https?:'
+    programs: [regsvr32]
+    ignore_case: true
+    technique: T1218.010
+    confidence: high
+    summary: regsvr32 loading a remote scriptlet
+
+  - id: rundll32_script
+    pattern: '\bjavascript:'
+    programs: [rundll32]
+    ignore_case: true
+    technique: T1218.011
+    confidence: high
+    summary: rundll32 running inline script
+
+  - id: shadow_copies_deleted
+    pattern: '\bdelete\s+shadows\b|\bshadowcopy\s+delete\b'
+    programs: [vssadmin, wmic]
+    ignore_case: true
+    technique: T1490
+    confidence: high
+    summary: Shadow copies being deleted, a common ransomware step
+
+  - id: recovery_disabled
+    pattern: '\brecoveryenabled\s+no\b'
+    programs: [bcdedit]
+    ignore_case: true
+    technique: T1490
+    confidence: high
+    summary: Windows recovery being disabled, a common ransomware step
+
+  - id: credential_dump
+    pattern: 'sekurlsa::|lsadump::|\bcomsvcs(\.dll)?,?\s+minidump\b|\blsass\b'
+    programs: [mimikatz, rundll32, procdump, procdump64]
+    ignore_case: true
+    technique: T1003.001
+    confidence: high
+    summary: Credentials being dumped from memory
+
+  # -------------------------------------------------------- Windows, medium
+  - id: powershell_encoded
+    pattern: '\b(powershell|pwsh)(\.exe)?\b.*\s[-/]e(nc|ncodedcommand|ncodedcomman|ncodedcomma|ncodedcomm|ncodedcom|ncodedco|ncodedc|ncoded|ncode|nco)?\s+[A-Za-z0-9+/=]{16,}'
+    ignore_case: true
+    technique: T1059.001
+    confidence: medium
+    summary: PowerShell running an encoded command
+
+  - id: powershell_download_run
+    pattern: '\b(iex|invoke-expression)\b.*\b(downloadstring|downloadfile|invoke-webrequest|iwr)\b'
+    ignore_case: true
+    technique: T1059.001
+    confidence: medium
+    summary: PowerShell downloading and running code
+
+  - id: bitsadmin_download
+    pattern: '\bbitsadmin(\.exe)?\b.*\s/transfer\b'
+    ignore_case: true
+    technique: T1197
+    confidence: medium
+    summary: bitsadmin used to download a file
+
+  - id: event_log_cleared
+    pattern: '\bwevtutil(\.exe)?\s+(cl|clear-log)\b'
+    ignore_case: true
+    technique: T1070.001
+    confidence: medium
+    summary: An event log being cleared
+
+  - id: defender_turned_off
+    pattern: '\bset-mppreference\b.*-disable(realtimemonitoring|ioavprotection|behaviormonitoring)\b'
+    ignore_case: true
+    technique: T1562.001
+    confidence: medium
+    summary: Windows Defender being turned off
+
+  - id: account_created_by_command
+    pattern: '\bnet1?(\.exe)?\s+user\s+\S+\s+\S+\s+/add\b'
+    ignore_case: true
+    technique: T1136.001
+    confidence: medium
+    summary: Account created from a command line

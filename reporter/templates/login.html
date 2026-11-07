@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>SentinelAI Sign In</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+  </head>
+  <body class="signin">
+    <main class="card">
+      <h1>SentinelAI</h1>
+      <p class="muted">Paste the access token, or open the link from <code>sentinel.py token</code>.</p>
+      {% if failed %}<p class="banner" role="alert">That token was not right.</p>{% endif %}
+      <form method="post" action="/login">
+        <label for="token">Access token</label>
+        <input id="token" name="token" type="password" autocomplete="off" autofocus required>
+        <button type="submit">Sign in</button>
+      </form>
+    </main>
+  </body>
+</html>

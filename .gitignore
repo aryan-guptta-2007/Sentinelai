@@ -1,0 +1,11 @@
+venv/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+
+# Runtime output
+data/
+logs/
+reporter-output/reports/*
+!reporter-output/reports/.gitkeep

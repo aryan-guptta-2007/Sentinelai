@@ -1,0 +1,79 @@
+# Detection rules and responses live in config/rules.yml.
+# Process indicators live in config/indicators.yml.
+
+[paths]
+data_dir = "data"
+logs_dir = "logs"
+
+[modes]
+run_mode = "dry-run" # "dry-run" records what would happen | "enforce" really acts
+follow_files = true  # false: process what is already on disk, then exit
+
+[thresholds]
+base_severity_threshold = 5 # alerts below this severity are dropped
+ml_weight = 0.4             # how far a host anomaly can lift a score towards 100 (0 turns it off)
+
+[ml]
+min_training_rows = 50
+max_training_rows = 20000
+retrain_hours = 24
+metrics_max_age_sec = 300 # older host metrics are ignored, not trusted
+anomaly_alert_score = 80  # raise an alert when the host stays above this
+
+[network]
+watch_listen = true
+allowed_ports = [22, 80, 443]
+# Windows reassigns these on every boot, so a new port from them means nothing.
+ignored_listeners = ["svchost", "lsass", "wininit", "services", "spoolsv", "system"]
+
+[collectors]
+interval_sec = 30        # metrics, listeners and resource use
+process_interval_sec = 2 # how often new processes are looked for
+integrity_interval_sec = 60 # how often the files in config/integrity.yml are checked
+auth_source = "auto"     # "auto" | "journal" | "file" | "none"
+auth_log = ""            # read this file instead of auth.log or secure
+cpu_threshold = 80       # percent of the whole machine, sustained
+mem_threshold = 70
+# Dual-use tools: reported, and stopped only if they open a listening port.
+suspicious_names = ["nc", "ncat", "netcat", "socat", "nmap"]
+# Tools with no legitimate place on a server: reported and stopped.
+malicious_names = ["xmrig", "minerd", "cpuminer", "hydra", "masscan", "mimikatz"]
+
+[responder]
+firewall = "auto"             # "auto" | "nft" | "iptables" | "netsh"
+block_timeout_sec = 3600      # doubles each time the same address comes back
+max_block_sec = 604800        # the longest a ban can grow to
+max_actions_per_minute = 30   # per action, so a flood of bad data cannot cause a flood of actions
+kill_protected_users = false  # false: never kill or lock root or allow-listed users
+max_threat_age_sec = 300      # older threats are recorded but not acted on
+protected_processes = ["systemd", "init", "sshd", "dbus-daemon", "dockerd", "containerd", "NetworkManager", "journald"]
+
+[retention]
+max_data_mb = 100 # a data file is rotated past this size
+max_log_mb = 20
+archive_days = 14 # rotated files are deleted after this long
+max_metric_rows = 50000
+
+[notify]
+# Fill in any of these and alerts start flowing. `sentinel.py notify-test` checks them.
+# Webhook addresses are secrets: SENTINELAI_WEBHOOK_URL, SENTINELAI_SLACK_URL and
+# SENTINELAI_DISCORD_URL keep them out of this file.
+min_score = 70
+cooldown_sec = 300
+max_per_minute = 20
+webhook_url = ""     # any JSON endpoint
+slack_webhook = ""
+discord_webhook = ""
+syslog_host = ""     # sends CEF over UDP, which most SIEMs read directly
+syslog_port = 514
+email_to = ""
+email_from = ""
+smtp_host = ""
+smtp_port = 587
+smtp_tls = true
+smtp_user = ""       # the password comes from SENTINELAI_SMTP_PASSWORD
+
+[dashboard]
+host = "127.0.0.1" # sign-in is required, and `sentinel.py token` prints the link
+port = 8080
+# allowed_hosts = ["sentinel.example.internal"] # names this may be reached by, behind a proxy
