@@ -1,0 +1,70 @@
+================================================================================
+SENTINELAI - FUTURE RESTORATION & UNPUSHED DATA BACKUP
+================================================================================
+
+1. GITHUB REPOSITORY (Everything in source code is safely pushed here)
+--------------------------------------------------------------------------------
+Repository URL : https://github.com/aryan-guptta-2007/Sentinelai.git
+Branch         : main
+Commit         : 23013db (Initial commit: SentinelAI host intrusion detection and response system)
+All 80 source code files, tests, scripts, rules, and configs are 100% saved on GitHub.
+
+
+2. WHAT WAS NOT PUSHED (Ignored by .gitignore to save space)
+--------------------------------------------------------------------------------
+- Virtual environments (.venv/, venv/): ~200MB of Python binary packages (recreated on install)
+- Runtime logs & test cache (.pytest_cache/, logs/, data/demo/)
+- Previous runtime dashboard token:
+  Dashboard Token: HtQH8uqbKa2QbaVkLMHPLvAbnfsdzRFLFB1oxXw5mYc
+  (When re-run in the future, SentinelAI automatically generates a new token, or you can reuse this)
+
+
+3. HOW TO RESTORE AND RUN ON ANY MACHINE IN THE FUTURE
+--------------------------------------------------------------------------------
+Step 1: Clone the repository
+  git clone https://github.com/aryan-guptta-2007/Sentinelai.git
+  cd Sentinelai
+
+Step 2: Setup (Windows)
+  powershell -ExecutionPolicy Bypass -File utils\setup.ps1
+  # Or manually:
+  python -m venv .venv
+  .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+Step 2: Setup (Linux)
+  bash utils/setup.sh
+  # Or manually:
+  python3 -m venv .venv
+  .venv/bin/pip install -r requirements.txt
+
+Step 3: Verification
+  # On Windows:
+  .\.venv\Scripts\python.exe sentinel.py check
+  .\.venv\Scripts\python.exe -m pytest -q
+
+  # On Linux:
+  .venv/bin/python sentinel.py check
+  .venv/bin/python -m pytest -q
+
+Step 4: Running SentinelAI
+  # Run demo (safe simulated attacks):
+  .\.venv\Scripts\python.exe sentinel.py demo
+
+  # Run real intrusion detection & response:
+  .\.venv\Scripts\python.exe sentinel.py run
+
+  # Get dashboard URL and token:
+  .\.venv\Scripts\python.exe sentinel.py token
+
+  # Generate standalone HTML report:
+  .\.venv\Scripts\python.exe sentinel.py report --hours 24
+
+
+4. IMPORTANT CONFIGURATION DETAILS
+--------------------------------------------------------------------------------
+- Config File       : config/sentinelai.toml
+- Detection Rules   : config/rules.yml (45 attack rules)
+- Indicators        : config/indicators.yml
+- File Integrity    : config/integrity.yml
+- Trusted IP List   : config/allowlist_ips.txt (Add your admin/VPN IPs here)
+================================================================================
